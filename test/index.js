@@ -7,6 +7,8 @@ var sendJson = require("send-data/json")
 var uuid = require("uuid")
 var split = require("split")
 var WebSocket = require("ws")
+var WebSocketStream = require("websocket-stream")
+var EngineSocket = require("engine.io-client").Socket
 
 var RelayServer = require("../index")
 
@@ -50,7 +52,7 @@ test("POST with open socket", function (assert) {
     // open a TCP socket
     var client = net.connect(TCP_PORT, function () {
         // Write the header saying what uri's your interested in
-        client.write(JSON.stringify({ uri: "/*" }) + "\n")
+        client.write(JSON.stringify({ uri: "/foo" }) + "\n")
 
         // make a RESTful request to add messages to the relay
         // server
@@ -85,17 +87,117 @@ test("POST with open socket", function (assert) {
     })
 })
 
-// test("POST with open engine.io socket", function (assert) {
-//     // var id = uuid()
+test("POST with open sockJS socket", function (assert) {
+    var id = uuid()
 
-//     var socket = new WebSocket("ws://localhost:" + HTTP_PORT + "/engine/")
+    var socket = new WebSocket("ws://localhost:" + HTTP_PORT +
+        "/shoe/websocket?uri=/bar")
+    var stream = WebSocketStream(socket)
 
-//     socket.on("open", function () {
-//         console.log("CONNECTED!")
+    stream.on("open", function () {
+        request({
+            uri: "http://localhost:" + HTTP_PORT + "/bar",
+            method: "POST",
+            json: { id: id }
+        }, function (err, res, body) {
+            assert.ifError(err)
+            assert.equal(res.statusCode, 200)
+            assert.equal(body, "OK")
+        })
+    })
 
-//         assert.end()
-//     })
-// })
+    var splitted = stream.pipe(split())
+
+    splitted.on("data", function (chunk) {
+        if (chunk === "") {
+            return
+        }
+
+        var json = JSON.parse(String(chunk))
+
+        assert.equal(json.uri, "/bar")
+        assert.equal(json.verb, "POST")
+        assert.equal(json.body.id, id)
+
+        stream.end()
+        assert.end()
+    })
+})
+
+test("POST with open engine.io socket", function (assert) {
+    var id = uuid()
+
+    var socket = new EngineSocket("ws://localhost:" + HTTP_PORT, {
+        transports: ["websocket"],
+        query: { uri: "/baz" }
+    })
+    var stream = WebSocketStream(socket)
+
+    stream.on("open", function () {
+        request({
+            uri: "http://localhost:" + HTTP_PORT + "/baz",
+            method: "POST",
+            json: { id: id }
+        }, function (err, res, body) {
+            assert.ifError(err)
+            assert.equal(res.statusCode, 200)
+            assert.equal(body, "OK")
+        })
+    })
+
+    var splitted = stream.pipe(split())
+
+    splitted.on("data", function (chunk) {
+        if (chunk === "") {
+            return
+        }
+
+        var json = JSON.parse(String(chunk))
+
+        assert.equal(json.uri, "/baz")
+        assert.equal(json.verb, "POST")
+        assert.equal(json.body.id, id)
+
+        stream.end()
+        assert.end()
+    })
+})
+
+test("write down socket with open socket", function (assert) {
+    var id = uuid()
+
+    var client = net.connect(TCP_PORT, function () {
+        // Write the header saying what uri's your interested in
+        client.write(JSON.stringify({ uri: "/quux" }) + "\n")
+
+        // make a RESTful request to add messages to the relay
+        // server
+        client.write(JSON.stringify({
+            uri: "/quux",
+            verb: "POST",
+            body: { id: id }
+        }) + "\n")
+    })
+
+    var splitted = client.pipe(split())
+
+    // split the messages on new lines and parse each message
+    // as JSON
+    splitted.on("data", function (chunk) {
+        if (chunk === "") {
+            return
+        }
+
+        var json = JSON.parse(String(chunk))
+
+        assert.equal(json.uri, "/quux")
+        assert.equal(json.verb, "POST")
+        assert.equal(json.body.id, id)
+
+        client.end()
+        assert.end()
+    })
+})
 
 test("close servers", function (assert) {
     servers.close(function (err) {

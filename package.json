@@ -19,17 +19,21 @@
   "dependencies": {
     "routes": "~0.2.0",
     "send-data": "~1.1.2",
-    "header-stream": "~0.1.4",
+    "split": "~0.2.5",
     "after": "~0.7.0",
-    "engine.io-stream": "~0.3.0"
+    "shoe": "0.0.10",
+    "engine.io": "git://github.com/Raynos/engine.io"
   },
   "devDependencies": {
     "tape": "~1.0.2",
     "body": "~1.1.0",
     "request": "~2.21.0",
     "uuid": "~1.4.1",
-    "split": "~0.2.5",
-    "ws": "~0.4.25"
+    "ws": "~0.4.25",
+    "readable-stream": "~1.0.2",
+    "websocket-stream": "0.0.5",
+    "engine.io-client": "~0.5.0",
+    "optimist": "~0.5.0"
   },
   "licenses": [
     {
