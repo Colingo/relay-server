@@ -1,112 +1,91 @@
-var http = require("http")
-var net = require("net")
 var url = require("url")
 var Buffer = require("buffer").Buffer
 
 var Router = require("routes")
-var sendError = require("send-data/error")
 var after = require("after")
-var split = require("split")
-var EngineServer = require("engine.io").Server
-var WebSocketStream = require("websocket-stream")
+var extend = require("xtend")
 
-var shoe = require("./lib/patched-shoe")
 var TimePurgedQueue = require("./lib/time-purged-queue")
+var createTCPServer = require("./handlers/tcp")
+var createHttpServers = require("./handlers/http")
+
+var defaults = {
+    tcp: false,
+    sockJS: false,
+    engineIO: true,
+    sharedHttp: false,
+    timeToLive: 20 * 1000
+}
 
 module.exports = RelayServer
 
 /*
     type RouteHandler := (req, res, { params, splats }, Callback<{
-        method: String,
+        verb: String,
         uri: String,
         body: Any
     }>)
 
     RelayServer := (routes: Object<String, RouteHandler>, options: {
         notFound: (req, res) => void,
-        errorHandler: (req, res) => void
-    }) => { http: HttpServer, tcp: NetServer }
+        errorHandler: (req, res) => void,
+        timeToLive: Number,
+        tcp: Boolean,
+        sockJS: Boolean,
+        engineIO: Boolean,
+        sharedHttp: Boolean
+    }) => {
+        http: {
+            read: HttpServer,
+            write: HttpServer,
+            server: HttpServer
+        },
+        tcp: NetServer,
+        close: (Callback) => void
+    }
+
+    options default to {
+        notFound: null,
+        errorHandler: null,
+        timeToLive: 20000,
+        tcp: false,
+        sockJS: false,
+        engineIO: true,
+        sharedHttp: false
+    }
+
+    which means create two HTTP servers one for writing messages
+        to and one for relaying messages over engine.io
 */
 function RelayServer(routes, options) {
-    options = options || {}
-    var timeToLive = options.timeToLive || 20 * 1000
+    options = extend(defaults, options || {})
+    options.routes = routes
+
     var sockets = []
-    var history = TimePurgedQueue(timeToLive)
+    var history = TimePurgedQueue(options.timeToLive)
 
-    var relayHandler = RelayRequestHandler(routes, options, relayMessage)
-    var httpServer = http.createServer()
-    var tcpServer = net.createServer(function netHandler(socket) {
-        var splitted = socket.pipe(split())
-
-        splitted.once("data", function headerHandler(chunk) {
-            var meta = JSON.parse(chunk)
-
-            if (meta.uri) {
-                socket.uri = "/?uri=" + meta.uri
-                socketListener(socket)
-            }
-
-            splitted.on("data", relay)
-        })
-    })
-
-    var sock = shoe(function sockHandler(socket) {
-        socket.uri = socket.url
-        socketListener(socket)
-    })
-    var sockHandler = sock.listener({ prefix: "/shoe" }).getHandler()
-    var engineServer = new EngineServer()
-
-    engineServer.on("connection", function engineHandler(socket) {
-        var stream = WebSocketStream(socket)
-        stream.uri = socket.request.url
-
-        socketListener(stream)
-    })
-
-    httpServer.on("request", function onRequest(req, res) {
-        var uri = url.parse(req.url).pathname
-
-        if (uri.substr(0, 5) === "/shoe") {
-            sockHandler(req, res)
-        } else if (uri.substr(0, 7) === "/engine") {
-            engineServer.handleRequest(req, res)
-        } else {
-            relayHandler(req, res)
-        }
-
-    })
-    httpServer.on("upgrade", function onUpgrade(req, socket, head) {
-        var uri = url.parse(req.url).pathname
-        if (uri.substr(0, 5) === "/shoe") {
-            sockHandler(req, socket, head)
-        } else if (uri.substr(0, 7) === "/engine") {
-            engineServer.handleUpgrade(req, socket, head)
-        }
-    })
+    var tcpServer = options.tcp ?
+        createTCPServer(socketListener, relayMessage) : null
+    var httpServers = createHttpServers(options, socketListener, relayMessage)
 
     return {
-        http: httpServer,
+        http: httpServers,
         tcp: tcpServer,
         close: close,
         _sockets: sockets,
         _history: history
     }
 
-    function relay(chunk) {
-        if (chunk) {
-            var message = JSON.parse(chunk)
+    /*  relayMessage := (message: {
+            verb: String,
+            uri: String,
+            body: Any
+        }) => void
 
-            if (typeof message.uri === "string" &&
-                typeof message.verb === "string" &&
-                typeof message.body !== "undefined"
-            ) {
-                relayMessage(new RelayMessage(message.uri,
-                    message.verb, message.body))
-            }
-        }
-    }
-
+        relayMessage will store the message in the history and send it to
+            all open sockets. Sockets are Streams that may be either TCP,
+            sockJS or engineIO clients
+    */
     function relayMessage(message) {
         var buffer = new Buffer(JSON.stringify(message) + "\n")
         history.add(message, buffer)
@@ -122,6 +101,18 @@ function RelayServer(routes, options) {
         }
     }
 
+    /*  socketListener := (socket: Stream & { uri: String }) => void
+
+        socketListener takes a socket which is a writable stream with
+            an uri property. The uri property should be a pathname
+            with a query parameter `uri` which describes a valid
+            `routes` string pattern to be used to filter the relay
+            messages.
+
+        It will flush the history into this socket and then store the
+            socket in the sockets array and relayMessage will write any
+            real time `RelayMessage`'s to this socket.
+    */
     function socketListener(socket) {
         var metaUri = url.parse(socket.uri, true).query.uri
 
@@ -151,77 +142,19 @@ function RelayServer(routes, options) {
     }
 
     function close(callback) {
-        var forward = after(2, callback)
+        var forward = after(tcpServer ? 2 : 1, callback)
 
         history.destroy()
-        engineServer.close()
-        httpServer.close(forward)
-        tcpServer.close(forward)
-    }
-}
+        httpServers.close(forward)
 
-function RelayMessage(uri, verb, body) {
-    this.uri = uri
-    this.verb = verb
-    this.body = body
+        if (tcpServer) {
+            tcpServer.close(forward)
+        }
+    }
 }
 
 function SocketMessage(socket, uri, metaRegexp) {
     this.socket = socket
     this.uri = uri
     this.regexp = metaRegexp
-}
-
-
-function RelayRequestHandler(routes, options, relayMessage) {
-    var notFound = options.notFound || fourofour
-    var errorHandler = options.errorHandler || sendError
-
-    var router = Router()
-
-    Object.keys(routes).forEach(function (route) {
-        var handler = routes[route]
-
-        router.addRoute(route, handler)
-    })
-
-    return requestHandler
-
-    function requestHandler(req, res) {
-        var route = router.match(url.parse(req.url).pathname)
-
-        if (!route) {
-            return notFound(req, res)
-        }
-
-        var fn = route.fn
-        fn(req, res, new RequestOptions(route.params, route.splats),
-            function (err, message) {
-                if (err) {
-                    return errorHandler(req, res, err)
-                }
-
-                if (!message) {
-                    return
-                }
-
-                if (typeof message.uri === "string" &&
-                    typeof message.verb === "string" &&
-                    "body" in message
-                ) {
-                    relayMessage(new RelayMessage(message.uri,
-                        message.verb, message.body))
-                }
-            })
-    }
-}
-
-function RequestOptions(params, splats) {
-    this.params = params || null
-    this.splats = splats || null
-}
-
-function fourofour(req, res) {
-    res.statusCode = 404
-    res.end("404 Not Found")
 }

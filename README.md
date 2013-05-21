@@ -23,7 +23,13 @@ var servers = RelayServer({
             sendJson(req, res, "ok")
         })
     }
+}, {
+    sharedHttp: true, // use a single HTTP server for write & read
+    tcp: true // create a TCP server for write & read
 })
+
+servers.http.server.listen(8000)
+server.tcp.listen(8001)
 ```
 
 ## Installation

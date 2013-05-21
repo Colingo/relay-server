@@ -11,9 +11,13 @@ var RelayServer = require("../index")
 
 var HTTP_PORT = Math.round(Math.random() * 10000) + 2000
 var TCP_PORT = Math.round(Math.random() * 10000) + 2000
-var servers = RelayServer({}, { timeToLive: 500 })
+var servers = RelayServer({}, {
+    timeToLive: 500,
+    sharedHttp: true,
+    tcp: true
+})
 
-servers.http.listen(HTTP_PORT)
+servers.http.server.listen(HTTP_PORT)
 servers.tcp.listen(TCP_PORT)
 
 var rate = argv.rate || 5
