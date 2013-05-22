@@ -1,6 +1,6 @@
 {
   "name": "relay-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Server used to relay deltas",
   "keywords": [],
   "author": "Raynos <raynos2@gmail.com>",
