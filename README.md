@@ -41,8 +41,8 @@ There is also a benchmark for the CPU usaged of the relay mechanism
 
 On my machine the following
 
-`node benchmarks/plain-tcp/server.js`
-`node benchmarks/plain-tcp/clients.js --clients=100`
+ - [`node benchmarks/plain-tcp/server.js`][5]
+ - [`node benchmarks/plain-tcp/clients.js --clients=100`][6]
 
 Print out that the server uses roughly 30% CPU & 20MB and the
   client uses 40$ CPU & 10MB
@@ -68,3 +68,5 @@ As can be seen the memory usage of this relaying is completely
   [2]: http://travis-ci.org/Colingo/relay-server
   [3]: https://david-dm.org/Colingo/relay-server/status.png
   [4]: https://david-dm.org/Colingo/relay-server
+  [5]: https://github.com/Colingo/relay-server/blob/master/benchmarks/plain-tcp/server.js
+  [6]: https://github.com/Colingo/relay-server/blob/master/benchmarks/plain-tcp/clients.js
