@@ -6,6 +6,7 @@ var split = require("split")
 var console = require("console")
 var argv = require("optimist").argv
 var fs = require("fs")
+var process = require("process")
 
 var RelayServer = require("../index")
 
@@ -22,15 +23,15 @@ servers.tcp.listen(TCP_PORT)
 
 var rate = argv.rate || 5
 var volume = argv.volume || 1
-var clients = argv.clients || 1
+var clients = argv.clients || 50
 
 var volumeCheck = rate * volume * clients
+// console.log("volumeCheck", volumeCheck)
 
 var list = []
 for (var i = 0; i < clients; i++) {
     list[i] = i
 }
-
 
 list.forEach(function (index) {
     var lineCount = 0
