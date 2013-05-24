@@ -12,18 +12,36 @@ Server used to relay deltas
 // Configure a server that takes arbitrary incoming messages and
 // accepts them
 var servers = RelayServer({
-    "/*": function acceptEverything(req, res, _, callback) {
-        var pathname = url.parse(req.url).pathname
-        jsonBody(req, res, function (err, body) {
-            if (err) {
-                return callback(err)
-            }
+    // writeRoutes is where you configure how to handle incoming
+    // requests to the write http server. You should
+    // sanitize, authorize and validate the incoming message
+    // and then return a triplet of { uri, verb, body }
+    writeRoutes: {
+        "/*": function acceptEverything(req, res, opts, callback) {
+            var pathname = url.parse(req.url).pathname
+            jsonBody(req, res, function (err, body) {
+                if (err) {
+                    return callback(err)
+                }
 
-            callback(null, { uri: pathname, verb: req.method, body: body })
-            sendJson(req, res, "ok")
-        })
-    }
-}, {
+                callback(null, { uri: pathname, verb: req.method, body: body })
+                sendJson(req, res, "ok")
+            })
+        }
+    },
+    // readRoutes is where you configure how to read a consistent
+    // state for a given uri. This will be the first value
+    // flushed down the streaming connection followed by individual
+    // messages
+    readRoutes: {
+        "/*": function returnNothing(req, pathname, opts, callback) {
+            callback(null, {
+                uri: pathname,
+                verb: "PATCH",
+                body: {}
+            })
+        }
+    },
     sharedHttp: true, // use a single HTTP server for write & read
     tcp: true // create a TCP server for write & read
 })
@@ -70,3 +88,4 @@ As can be seen the memory usage of this relaying is completely
   [4]: https://david-dm.org/Colingo/relay-server
   [5]: https://github.com/Colingo/relay-server/blob/master/benchmarks/plain-tcp/server.js
   [6]: https://github.com/Colingo/relay-server/blob/master/benchmarks/plain-tcp/clients.js
+

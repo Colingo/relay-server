@@ -1,5 +1,6 @@
 var url = require("url")
 var net = require("net")
+
 var request = require("request")
 var test = require("tape")
 var jsonBody = require("body/json")
@@ -23,18 +24,32 @@ test("RelayServer is a function", function (assert) {
 
 test("create server", function (assert) {
     servers = RelayServer({
-        "/*": function acceptEverything(req, res, _, callback) {
-            var pathname = url.parse(req.url).pathname
-            jsonBody(req, res, function (err, body) {
-                if (err) {
-                    return callback(err)
-                }
+        writeRoutes: {
+            "/*": function acceptEverything(req, res, _, callback) {
+                var pathname = url.parse(req.url).pathname
+                jsonBody(req, res, function (err, body) {
+                    if (err) {
+                        return callback(err)
+                    }
 
-                callback(null, { uri: pathname, verb: req.method, body: body })
-                sendJson(req, res, "OK")
-            })
-        }
-    }, {
+                    callback(null, {
+                        uri: pathname,
+                        verb: req.method,
+                        body: body
+                    })
+                    sendJson(req, res, "OK")
+                })
+            }
+        },
+        readRoutes: {
+            "/*": function returnNothing(req, pathname, _, callback) {
+                callback(null, {
+                    uri: pathname,
+                    verb: "PATCH",
+                    body: {}
+                })
+            }
+        },
         sharedHttp: true,
         sockJS: true,
         tcp: true
@@ -50,6 +65,27 @@ test("create server", function (assert) {
         })
     })
 })
+
+function readTwo(socket, callback) {
+    var counter = 2
+    var results = []
+    var splitted = socket.pipe(split())
+
+    splitted.on("data", function (chunk) {
+        if (chunk === "") {
+            return
+        }
+
+        var json = JSON.parse(String(chunk))
+
+        counter--
+        results.push(json)
+
+        if (counter === 0) {
+            callback(null, results)
+        }
+    })
+}
 
 test("POST with open socket", function (assert) {
     var id = uuid()
@@ -71,27 +107,27 @@ test("POST with open socket", function (assert) {
         })
     })
 
-    var splitted = client.pipe(split())
+    readTwo(client, function (err, list) {
+        assert.ifError(err)
 
-    // split the messages on new lines and parse each message
-    // as JSON
-    splitted.on("data", function (chunk) {
-        if (chunk === "") {
-            return
-        }
+        var first = list[0]
 
-        var json = JSON.parse(String(chunk))
+        assert.equal(first.uri, "/foo")
+        assert.equal(first.verb, "PATCH")
+        assert.deepEqual(first.body, {})
 
-        assert.equal(json.uri, "/foo")
-        assert.equal(json.verb, "POST")
-        assert.equal(json.body.id, id)
+        var second = list[1]
+
+        assert.equal(second.uri, "/foo")
+        assert.equal(second.verb, "POST")
+        assert.equal(second.body.id, id)
 
         client.end()
         assert.end()
     })
 })
 
-test("POST with open sockJS socket", function (assert) {
+test("POST with open (websocket) sockJS socket", function (assert) {
     var id = uuid()
 
     var socket = new WebSocket("ws://localhost:" + HTTP_PORT +
@@ -110,18 +146,20 @@ test("POST with open sockJS socket", function (assert) {
         })
     })
 
-    var splitted = stream.pipe(split())
+    readTwo(stream, function (err, list) {
+        assert.ifError(err)
 
-    splitted.on("data", function (chunk) {
-        if (chunk === "") {
-            return
-        }
+        var first = list[0]
 
-        var json = JSON.parse(String(chunk))
+        assert.equal(first.uri, "/bar")
+        assert.equal(first.verb, "PATCH")
+        assert.deepEqual(first.body, {})
 
-        assert.equal(json.uri, "/bar")
-        assert.equal(json.verb, "POST")
-        assert.equal(json.body.id, id)
+        var second = list[1]
+
+        assert.equal(second.uri, "/bar")
+        assert.equal(second.verb, "POST")
+        assert.equal(second.body.id, id)
 
         stream.end()
         assert.end()
@@ -149,18 +187,20 @@ test("POST with open engine.io socket", function (assert) {
         })
     })
 
-    var splitted = stream.pipe(split())
+    readTwo(stream, function (err, list) {
+        assert.ifError(err)
 
-    splitted.on("data", function (chunk) {
-        if (chunk === "") {
-            return
-        }
+        var first = list[0]
 
-        var json = JSON.parse(String(chunk))
+        assert.equal(first.uri, "/baz")
+        assert.equal(first.verb, "PATCH")
+        assert.deepEqual(first.body, {})
 
-        assert.equal(json.uri, "/baz")
-        assert.equal(json.verb, "POST")
-        assert.equal(json.body.id, id)
+        var second = list[1]
+
+        assert.equal(second.uri, "/baz")
+        assert.equal(second.verb, "POST")
+        assert.equal(second.body.id, id)
 
         stream.end()
         assert.end()
@@ -183,20 +223,20 @@ test("write down socket with open socket", function (assert) {
         }) + "\n")
     })
 
-    var splitted = client.pipe(split())
+    readTwo(client, function (err, list) {
+        assert.ifError(err)
 
-    // split the messages on new lines and parse each message
-    // as JSON
-    splitted.on("data", function (chunk) {
-        if (chunk === "") {
-            return
-        }
+        var first = list[0]
 
-        var json = JSON.parse(String(chunk))
+        assert.equal(first.uri, "/quux")
+        assert.equal(first.verb, "PATCH")
+        assert.deepEqual(first.body, {})
 
-        assert.equal(json.uri, "/quux")
-        assert.equal(json.verb, "POST")
-        assert.equal(json.body.id, id)
+        var second = list[1]
+
+        assert.equal(second.uri, "/quux")
+        assert.equal(second.verb, "POST")
+        assert.equal(second.body.id, id)
 
         client.end()
         assert.end()

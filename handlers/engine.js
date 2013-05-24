@@ -1,3 +1,4 @@
+var url = require("url")
 var EngineServer = require("engine.io").Server
 var WebSocketStream = require("websocket-stream")
 
@@ -8,9 +9,9 @@ function createEngineServer(socketListener) {
 
     engineServer.on("connection", function engineHandler(socket) {
         var stream = WebSocketStream(socket)
-        stream.uri = socket.request.url
+        stream.uri = url.parse(socket.request.url, true).query.uri
 
-        socketListener(stream)
+        socketListener(stream, socket.request)
     })
 
     return engineServer

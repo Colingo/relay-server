@@ -12,9 +12,8 @@ function createHttpServers(options, socketListener, relayMessage) {
     var sharedHttp = options.sharedHttp
     var sockJS = options.sockJS
     var engineIO = options.engineIO
-    var routes = options.routes
 
-    var relayHandler = RelayRequestHandler(routes, options, relayMessage)
+    var relayHandler = RelayRequestHandler(options, relayMessage)
     var writeHttpServer = !sharedHttp ? http.createServer() : null
     var sockHandler = sockJS ? createSockHandler(socketListener) : null
     var engineServer = engineIO ? createEngineServer(socketListener) : null
@@ -25,6 +24,7 @@ function createHttpServers(options, socketListener, relayMessage) {
         var uri = url.parse(req.url).pathname
 
         if (sockHandler && uri.substr(0, 5) === "/shoe") {
+            res.request = req
             sockHandler(req, res)
         } else if (engineServer && uri.substr(0, 7) === "/engine") {
             engineServer.handleRequest(req, res)
